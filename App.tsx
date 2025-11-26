@@ -1,11 +1,12 @@
-//App.tsx
+
 import React, { useState, useEffect } from 'react';
 import { Auth } from './components/Auth';
 import { Dashboard } from './components/Dashboard';
 import { Editor } from './components/Editor';
 import { Profile } from './components/Profile';
+import { Guide } from './components/Guide';
 import { User, Project, Language, File, EditorSettings } from './types';
-import { saveUser, getUser, saveProject, getProjects } from './services/firebaseService';
+import { saveUser, getUser, saveProject, getProjects, deleteProject } from './services/firebaseService';
 
 // Updated templates to start with a SINGLE file
 const PROJECT_TEMPLATES: Record<Language, File[]> = {
@@ -52,7 +53,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [view, setView] = useState<'dashboard' | 'profile'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'profile' | 'guide'>('dashboard');
   const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
@@ -159,6 +160,7 @@ const App: React.FC = () => {
       language,
       files: files,
       lastModified: Date.now(),
+      isTrashed: false
     };
     
     const updatedProjects = [newProject, ...projects];
@@ -203,16 +205,52 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDeleteProject = async (id: string) => {
+  // Soft Delete (Move to Trash)
+  const handleSoftDeleteProject = async (id: string) => {
     if (!user) return;
-    if (window.confirm("Are you sure? This cannot be undone.")) {
+    const updatedProjects = projects.map(p => p.id === id ? { ...p, isTrashed: true } : p);
+    setProjects(updatedProjects);
+    if (currentProject && currentProject.id === id) setCurrentProject(null);
+
+    // Save the "trashed" state
+    const projectToUpdate = updatedProjects.find(p => p.id === id);
+    if (projectToUpdate) {
+        if (user.settings.useCloudStorage) {
+            await saveProject(user.email, projectToUpdate);
+        } else {
+            localStorage.setItem('cloudcode_projects', JSON.stringify(updatedProjects));
+        }
+    }
+  };
+
+  // Restore from Trash
+  const handleRestoreProject = async (id: string) => {
+    if (!user) return;
+    const updatedProjects = projects.map(p => p.id === id ? { ...p, isTrashed: false } : p);
+    setProjects(updatedProjects);
+
+    const projectToUpdate = updatedProjects.find(p => p.id === id);
+    if (projectToUpdate) {
+        if (user.settings.useCloudStorage) {
+            await saveProject(user.email, projectToUpdate);
+        } else {
+            localStorage.setItem('cloudcode_projects', JSON.stringify(updatedProjects));
+        }
+    }
+  };
+
+  // Permanent Delete
+  const handlePermanentDeleteProject = async (id: string) => {
+    if (!user) return;
+    if (window.confirm("Are you sure? This action cannot be undone.")) {
       const updatedProjects = projects.filter(p => p.id !== id);
       setProjects(updatedProjects);
-      if (currentProject && currentProject.id === id) setCurrentProject(null);
       
-      if (!user.settings.useCloudStorage) {
-         if (updatedProjects.length === 0) localStorage.removeItem('cloudcode_projects');
-         else localStorage.setItem('cloudcode_projects', JSON.stringify(updatedProjects));
+      if (user.settings.useCloudStorage) {
+          await deleteProject(user.email, id);
+      } else {
+          if (updatedProjects.length === 0) localStorage.removeItem('cloudcode_projects');
+          else localStorage.setItem('cloudcode_projects', JSON.stringify(updatedProjects));
       }
     }
   };
@@ -266,6 +304,12 @@ const App: React.FC = () => {
     );
   }
 
+  if (view === 'guide') {
+    return (
+        <Guide onBack={() => setView('dashboard')} />
+    );
+  }
+
   return (
     <Dashboard
       projects={projects}
@@ -273,9 +317,12 @@ const App: React.FC = () => {
       userAvatar={user.avatar}
       onCreateProject={handleCreateProject}
       onOpenProject={setCurrentProject}
-      onDeleteProject={handleDeleteProject}
+      onDeleteProject={handleSoftDeleteProject}
+      onRestoreProject={handleRestoreProject}
+      onPermanentDeleteProject={handlePermanentDeleteProject}
       onLogout={handleLogout}
       onProfileClick={() => setView('profile')}
+      onGuideClick={() => setView('guide')}
     />
   );
 };

@@ -1,15 +1,18 @@
 
 import React, { useState } from 'react';
 import { Project, Language } from '../types';
-import { Plus, Code, Trash2, FolderOpen, Clock, LogOut, FileCode, Search, Filter } from 'lucide-react';
+import { Plus, Code, Trash2, FolderOpen, Clock, LogOut, FileCode, Search, Filter, RotateCcw, X, BookOpen, HelpCircle } from 'lucide-react';
 
 interface DashboardProps {
   projects: Project[];
   onCreateProject: (name: string, language: Language) => void;
   onOpenProject: (project: Project) => void;
-  onDeleteProject: (id: string) => void;
+  onDeleteProject: (id: string) => void; // Soft Delete
+  onRestoreProject: (id: string) => void;
+  onPermanentDeleteProject: (id: string) => void;
   onLogout: () => void;
   onProfileClick: () => void;
+  onGuideClick: () => void;
   userName: string;
   userAvatar?: string;
 }
@@ -19,8 +22,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onCreateProject,
   onOpenProject,
   onDeleteProject,
+  onRestoreProject,
+  onPermanentDeleteProject,
   onLogout,
   onProfileClick,
+  onGuideClick,
   userName,
   userAvatar
 }) => {
@@ -31,6 +37,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [filterLang, setFilterLang] = useState<string>('ALL');
+  const [viewTrash, setViewTrash] = useState(false);
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,6 +64,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Filter Logic
   const filteredProjects = projects.filter(p => {
+      // If viewTrash is true, show ONLY trashed projects. If false, show ONLY active (non-trashed/undefined) projects
+      const isTrashed = !!p.isTrashed;
+      if (viewTrash !== isTrashed) return false;
+
       const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesLang = filterLang === 'ALL' || p.language === filterLang;
       return matchesSearch && matchesLang;
@@ -74,7 +85,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <p className="text-xs text-gray-500 uppercase tracking-widest">Enterprise Edition</p>
           </div>
         </div>
-        <div className="flex items-center justify-between w-full md:w-auto space-x-0 md:space-x-6">
+        <div className="flex items-center justify-between w-full md:w-auto space-x-0 md:space-x-3">
+          <button onClick={onGuideClick} className="flex items-center space-x-2 text-gray-400 hover:text-gray-100 p-2 rounded-lg transition-colors border border-transparent hover:border-gray-800" title="Documentation & Guide">
+              <BookOpen size={18} />
+              <span className="hidden md:inline text-sm font-medium">Guide</span>
+          </button>
           <button onClick={onProfileClick} className="flex items-center space-x-3 text-right group cursor-pointer hover:bg-gray-900 p-2 rounded-lg transition-colors border border-transparent hover:border-gray-800">
              <div className="hidden sm:block">
                 <span className="block text-sm text-gray-100 font-medium group-hover:text-accent-400 transition-colors">{userName}</span>
@@ -94,17 +109,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <main className="max-w-6xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <div>
-            <h2 className="text-2xl md:text-3xl font-bold text-gray-100">Projects</h2>
-            <p className="text-gray-500 mt-1 text-sm md:text-base">Manage and organize your cloud codebases</p>
+            <h2 className="text-2xl md:text-3xl font-bold text-gray-100">{viewTrash ? 'Trash' : 'Projects'}</h2>
+            <p className="text-gray-500 mt-1 text-sm md:text-base">{viewTrash ? 'Restore or permanently delete your projects' : 'Manage and organize your cloud codebases'}</p>
           </div>
-          <div className="flex gap-2 w-full md:w-auto">
+          <div className="flex gap-2 w-full md:w-auto items-center">
              <button
-                onClick={() => setIsCreating(true)}
-                className="w-full md:w-auto flex items-center justify-center space-x-2 bg-accent-600 hover:bg-accent-500 text-white px-5 py-2.5 rounded-lg transition-colors shadow-lg shadow-accent-600/20 font-medium"
-              >
-                <Plus size={20} />
-                <span>New Project</span>
-              </button>
+                onClick={() => setViewTrash(!viewTrash)}
+                className={`flex items-center justify-center space-x-2 px-4 py-2.5 rounded-lg transition-colors font-medium border ${viewTrash ? 'bg-red-500/10 text-red-400 border-red-500/50' : 'bg-gray-900 text-gray-400 border-gray-800 hover:text-red-400'}`}
+                title={viewTrash ? "View Active Projects" : "View Trash"}
+             >
+                <Trash2 size={20} />
+                <span className="hidden md:inline">{viewTrash ? 'Close Trash' : 'Trash'}</span>
+             </button>
+             {!viewTrash && (
+                 <button
+                    onClick={() => setIsCreating(true)}
+                    className="w-full md:w-auto flex items-center justify-center space-x-2 bg-accent-600 hover:bg-accent-500 text-white px-5 py-2.5 rounded-lg transition-colors shadow-lg shadow-accent-600/20 font-medium"
+                  >
+                    <Plus size={20} />
+                    <span>New Project</span>
+                  </button>
+             )}
           </div>
         </div>
         
@@ -135,7 +160,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
         </div>
 
-        {isCreating && (
+        {isCreating && !viewTrash && (
           <div className="mb-8 bg-gray-900 border border-gray-800 p-4 md:p-6 rounded-xl animate-fade-in-down shadow-2xl">
             <form onSubmit={handleCreate} className="flex flex-col md:flex-row gap-4 items-end">
               <div className="flex-1 w-full">
@@ -154,7 +179,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <select
                   value={newProjectLang}
                   onChange={(e) => setNewProjectLang(e.target.value as Language)}
-                  className="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 text-gray-100 focus:border-accent-500 focus:outline-none cursor-pointer"
+                  className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 text-gray-100 focus:border-accent-500 focus:outline-none cursor-pointer"
                 >
                   {Object.values(Language)
                     .filter(l => ![Language.JSON, Language.CSS, Language.MARKDOWN, Language.DOCKERFILE, Language.PLAINTEXT].includes(l))
@@ -185,8 +210,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         {filteredProjects.length === 0 ? (
           <div className="text-center py-20 bg-gray-900/30 border border-gray-800 border-dashed rounded-2xl">
             <FolderOpen className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-400">No Projects Found</h3>
-            <p className="text-gray-500 mt-2">{searchQuery ? 'Try adjusting your search criteria.' : 'Initialize a new project to start coding.'}</p>
+            <h3 className="text-xl font-semibold text-gray-400">{viewTrash ? 'Trash is Empty' : 'No Projects Found'}</h3>
+            <p className="text-gray-500 mt-2">{viewTrash ? 'Deleted projects will appear here.' : (searchQuery ? 'Try adjusting your search criteria.' : 'Initialize a new project to start coding.')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
@@ -194,21 +219,39 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div
                 key={project.id}
                 className="group bg-gray-900 border border-gray-800 hover:border-accent-500/50 rounded-xl p-6 transition-all duration-300 hover:shadow-2xl hover:shadow-black/5 hover:-translate-y-1 cursor-pointer flex flex-col"
-                onClick={() => onOpenProject(project)}
+                onClick={() => !viewTrash && onOpenProject(project)}
               >
                 <div className="flex justify-between items-start mb-4">
                   <div className={`p-3 rounded-lg bg-gray-950 ${getLangColor(project.language)} ring-1 ring-gray-800`}>
                     <Code size={24} />
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteProject(project.id);
-                    }}
-                    className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors opacity-100 md:opacity-0 group-hover:opacity-100"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                  
+                  {viewTrash ? (
+                      <div className="flex gap-2">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onRestoreProject(project.id); }}
+                            className="p-2 text-gray-600 hover:text-green-400 hover:bg-green-400/10 rounded-lg transition-colors"
+                            title="Restore Project"
+                          >
+                            <RotateCcw size={18} />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onPermanentDeleteProject(project.id); }}
+                            className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                            title="Delete Forever"
+                          >
+                            <X size={18} />
+                          </button>
+                      </div>
+                  ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }}
+                        className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors opacity-100 md:opacity-0 group-hover:opacity-100"
+                        title="Move to Trash"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                  )}
                 </div>
                 
                 <h3 className="text-lg font-bold mb-1 text-gray-100 group-hover:text-accent-400 transition-colors truncate">{project.name}</h3>

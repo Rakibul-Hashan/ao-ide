@@ -1,6 +1,4 @@
 import MonacoEditor, { loader, useMonaco } from "@monaco-editor/react";
-
-
 import {
   AlertTriangle,
   ArrowLeft,
@@ -21,6 +19,7 @@ import {
   Moon,
   Play,
   Plus,
+  Redo,
   Save,
   Search,
   Settings,
@@ -28,6 +27,7 @@ import {
   Sun,
   Terminal,
   Trash2,
+  Undo,
   X,
 } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -377,7 +377,6 @@ export const Editor: React.FC<EditorProps> = ({
   const handleEditorMount = (editor: any, monacoInstance: any) => {
     editorRef.current = editor;
 
-    // Use the instance passed from onMount to ensure it's loaded
     const m = monacoInstance || monaco;
     if (!m) return;
 
@@ -389,6 +388,11 @@ export const Editor: React.FC<EditorProps> = ({
 
     // Ctrl + Enter (Run)
     editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.Enter, () => {
+      handleRun();
+    });
+
+    // Ctrl + Alt + N (Run - Code Runner Style)
+    editor.addCommand(m.KeyMod.CtrlCmd | m.KeyMod.Alt | m.KeyCode.KeyN, () => {
       handleRun();
     });
 
@@ -533,13 +537,14 @@ export const Editor: React.FC<EditorProps> = ({
   const handleDeleteFile = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (files.length <= 1) {
-      alert("Cannot delete the last file.");
+      showToast("Cannot delete the last file.", "error");
       return;
     }
-    if (confirm("Are you sure?")) {
+    if (confirm("Are you sure you want to delete this file?")) {
       const newFiles = files.filter((f) => f.id !== id);
       setFiles(newFiles);
       if (activeFileId === id) setActiveFileId(newFiles[0].id);
+      showToast("File deleted", "info");
     }
   };
 
@@ -573,6 +578,20 @@ export const Editor: React.FC<EditorProps> = ({
     }
   };
 
+  const handleUndo = () => {
+    editorRef.current?.trigger("keyboard", "undo", null);
+  };
+
+  const handleRedo = () => {
+    editorRef.current?.trigger("keyboard", "redo", null);
+  };
+
+  const handleClearTerminal = () => {
+    setTerminals((prev) =>
+      prev.map((t) => (t.id === activeTerminalId ? { ...t, content: "" } : t))
+    );
+  };
+
   const handleRun = async () => {
     if (!activeFile) return;
     if (activeFile.language === Language.HTML) {
@@ -582,6 +601,7 @@ export const Editor: React.FC<EditorProps> = ({
       const url = URL.createObjectURL(blob);
       setPreviewUrl(url);
       setIsRunning(false);
+      showToast("Rendering Preview...", "info");
       return;
     }
 
@@ -769,7 +789,20 @@ export const Editor: React.FC<EditorProps> = ({
           </button>
 
           <div className="flex items-center gap-1 mx-2 text-gray-400">
-            {/* Monaco handles undo/redo natively, buttons here would need detailed API hooks, keeping simpler for now */}
+            <button
+              onClick={handleUndo}
+              className="p-1.5 hover:bg-gray-800 rounded hover:text-white"
+              title="Undo (Ctrl+Z)"
+            >
+              <Undo size={16} />
+            </button>
+            <button
+              onClick={handleRedo}
+              className="p-1.5 hover:bg-gray-800 rounded hover:text-white"
+              title="Redo (Ctrl+Shift+Z)"
+            >
+              <Redo size={16} />
+            </button>
           </div>
 
           <div>
@@ -1285,8 +1318,16 @@ export const Editor: React.FC<EditorProps> = ({
                         setActiveTerminalId(id);
                       }}
                       className="p-1 hover:bg-gray-800 rounded text-gray-500"
+                      title="New Terminal"
                     >
                       <Plus size={12} />
+                    </button>
+                    <button
+                      onClick={handleClearTerminal}
+                      className="p-1 hover:bg-gray-800 rounded text-gray-500 hover:text-red-400 ml-1"
+                      title="Clear Terminal"
+                    >
+                      <Trash2 size={12} />
                     </button>
                   </div>
                 )}
@@ -1301,38 +1342,50 @@ export const Editor: React.FC<EditorProps> = ({
                 </div>
               </div>
 
-              <div className="flex-1 overflow-auto p-4 font-mono text-sm relative">
+              <div className="flex-1 flex flex-col overflow-hidden font-mono text-sm relative">
                 {activePanel === "terminal" && (
-                  <>
-                    {executionStats && (
-                      <div className="absolute top-2 right-4 text-xs text-gray-500 flex gap-4 pointer-events-none">
-                        <span>
-                          Time:{" "}
-                          <span className="text-gray-300">
-                            {executionStats.time}
+                  <div className="flex flex-col h-full">
+                    <div className="flex-1 overflow-auto p-4 relative">
+                      {executionStats && (
+                        <div className="absolute top-2 right-4 text-xs text-gray-500 flex gap-4 pointer-events-none">
+                          <span>
+                            Time:{" "}
+                            <span className="text-gray-300">
+                              {executionStats.time}
+                            </span>
                           </span>
-                        </span>
-                        <span>
-                          Mem:{" "}
-                          <span className="text-gray-300">
-                            {executionStats.memory}
+                          <span>
+                            Mem:{" "}
+                            <span className="text-gray-300">
+                              {executionStats.memory}
+                            </span>
                           </span>
-                        </span>
-                      </div>
-                    )}
-                    <div
-                      className={`whitespace-pre-wrap min-h-full ${
-                        hasError ? "text-red-400" : "text-gray-300"
-                      }`}
-                    >
-                      {terminals.find((t) => t.id === activeTerminalId)
-                        ?.content || (
-                        <span className="text-gray-600 opacity-50">
-                          Ready to execute...
-                        </span>
+                        </div>
                       )}
+                      <div
+                        className={`whitespace-pre-wrap ${
+                          hasError ? "text-red-400" : "text-gray-300"
+                        }`}
+                      >
+                        {terminals.find((t) => t.id === activeTerminalId)
+                          ?.content || (
+                          <span className="text-gray-600 opacity-50">
+                            Ready to execute...
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </>
+                    <div className="border-t border-gray-800 p-2 flex items-center gap-2 bg-gray-900">
+                      <span className="text-green-500 font-bold">➜</span>
+                      <input
+                        type="text"
+                        value={userInput}
+                        onChange={(e) => setUserInput(e.target.value)}
+                        className="bg-transparent outline-none text-gray-100 flex-1 font-mono text-sm placeholder-gray-600"
+                        placeholder="Enter input for your program here (stdin)..."
+                      />
+                    </div>
+                  </div>
                 )}
                 {activePanel === "preview" && (
                   <div className="w-full h-full bg-white rounded-md overflow-hidden">

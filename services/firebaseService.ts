@@ -1,115 +1,150 @@
-// // firebaseSevices.ts
-// import { User, Project } from '../types';
 
-// // Simulate network delay
-// const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
+import { User, Project } from '../types';
 
-// // Mock Database
-// const DB: { users: Record<string, User>, projects: Record<string, Project[]> } = {
-//   users: {},
-//   projects: {}
-// };
+// ============================================================================
+// INSTRUCTIONS:
+// 1. Go to https://console.firebase.google.com/
+// 2. Create a project > Build > Firestore Database > Create (Test Mode)
+// 3. Project Settings > General > Your apps > Web </>
+// 4. Copy the config object and paste it below.
+// ============================================================================
 
-// export const saveUser = async (user: User): Promise<void> => {
-//   await delay(500); // Simulate network latency
-//   DB.users[user.email] = user;
-//   // Also save to local storage as a "cloud backup" for this simulation
-//   localStorage.setItem(`cloud_user_${user.email}`, JSON.stringify(user));
-// };
+const firebaseConfig: any = {
+  // --- PASTE YOUR FIREBASE CONFIG HERE ---
+  // apiKey: "AIzaSy...",
+  // authDomain: "your-project.firebaseapp.com",
+  // projectId: "your-project",
+  // storageBucket: "your-project.appspot.com",
+  // messagingSenderId: "...",
+  // appId: "..."
+};
 
-// export const getUser = async (email: string): Promise<User | null> => {
-//   await delay(500);
-  
-//   // 1. Check in-memory DB
-//   if (DB.users[email]) return DB.users[email];
-  
-//   // 2. Check persistent storage simulation
-//   const cached = localStorage.getItem(`cloud_user_${email}`);
-//   if (cached) {
-//       const user = JSON.parse(cached);
-//       DB.users[email] = user;
-//       return user;
-//   }
-  
-//   return null;
-// };
+// If config is missing, we gracefully fallback to simulation to prevent app crash
+const isConfigured = !!firebaseConfig.apiKey;
 
-// export const saveProject = async (email: string, project: Project): Promise<void> => {
-//   await delay(300);
-  
-//   // Initialize project array for user if not exists
-//   if (!DB.projects[email]) {
-//       // Try load from storage first
-//       const cached = localStorage.getItem(`cloud_projects_${email}`);
-//       DB.projects[email] = cached ? JSON.parse(cached) : [];
-//   }
-  
-//   const index = DB.projects[email].findIndex(p => p.id === project.id);
-//   if (index >= 0) {
-//     DB.projects[email][index] = project;
-//   } else {
-//     DB.projects[email].unshift(project); // Add to top
-//   }
-  
-//   // Persist
-//   localStorage.setItem(`cloud_projects_${email}`, JSON.stringify(DB.projects[email]));
-// };
+let db: any;
+try {
+    if (isConfigured) {
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+    }
+} catch (e) {
+    console.error("Firebase init error (Did you add your keys?):", e);
+}
 
-// export const getProjects = async (email: string): Promise<Project[]> => {
-//   await delay(300);
-  
-//   if (DB.projects[email]) return DB.projects[email];
-  
-//   const cached = localStorage.getItem(`cloud_projects_${email}`);
-//   if (cached) {
-//       const projects = JSON.parse(cached);
-//       DB.projects[email] = projects;
-//       return projects;
-//   }
-  
-//   return [];
-// };
+// --- Real Firestore Implementation ---
 
-
-
-import { User, Project } from "../types";
-import { db } from "./firebaseConfig";
-import {
-  doc,
-  setDoc,
-  getDoc,
-  collection,
-  getDocs,
-  updateDoc,
-} from "firebase/firestore";
-
-// Save user profile
 export const saveUser = async (user: User): Promise<void> => {
-  const ref = doc(db, "users", user.email);
-  await setDoc(ref, user, { merge: true });
-};
-
-// Load user
-export const getUser = async (email: string): Promise<User | null> => {
-  const ref = doc(db, "users", email);
-  const snap = await getDoc(ref);
-  if (snap.exists()) {
-    return snap.data() as User;
+  if (!isConfigured || !db) {
+     console.warn("Firebase not configured. Saving to local simulation.");
+     localStorage.setItem(`cloud_user_${user.email}`, JSON.stringify(user));
+     return;
   }
-  return null;
+  
+  try {
+    const userRef = doc(db, "users", user.email);
+    // Remove complex objects if necessary, but Firestore handles JSON well.
+    // Ensure undefined values are not passed (Firestore rejects them).
+    const userData = JSON.parse(JSON.stringify(user)); 
+    await setDoc(userRef, userData, { merge: true });
+  } catch (e) {
+    console.error("Error saving user to Cloud:", e);
+  }
 };
 
-// Save or update project
-export const saveProject = async (email: string, project: Project) => {
-  const ref = doc(db, "users", email, "projects", project.id);
-  await setDoc(ref, project, { merge: true });
+export const getUser = async (email: string): Promise<User | null> => {
+  if (!isConfigured || !db) {
+      const cached = localStorage.getItem(`cloud_user_${email}`);
+      return cached ? JSON.parse(cached) : null;
+  }
+
+  try {
+    const userRef = doc(db, "users", email);
+    const docSnap = await getDoc(userRef);
+
+    if (docSnap.exists()) {
+      return docSnap.data() as User;
+    }
+    return null;
+  } catch (e) {
+    console.error("Error fetching user from Cloud:", e);
+    return null;
+  }
 };
 
-// Load all projects
+export const saveProject = async (email: string, project: Project): Promise<void> => {
+  if (!isConfigured || !db) {
+     const key = `cloud_projects_${email}`;
+     const existing = JSON.parse(localStorage.getItem(key) || "[]");
+     const idx = existing.findIndex((p: Project) => p.id === project.id);
+     if (idx >= 0) existing[idx] = project; else existing.unshift(project);
+     localStorage.setItem(key, JSON.stringify(existing));
+     return;
+  }
+
+  try {
+    const projectsRef = doc(db, "projects", email);
+    const docSnap = await getDoc(projectsRef);
+    
+    let list: Project[] = [];
+    if (docSnap.exists()) {
+        list = docSnap.data().list || [];
+    }
+    
+    const index = list.findIndex(p => p.id === project.id);
+    if (index >= 0) {
+        list[index] = project;
+    } else {
+        list.unshift(project);
+    }
+    
+    await setDoc(projectsRef, { list });
+  } catch (e) {
+    console.error("Error saving project to Cloud:", e);
+  }
+};
+
 export const getProjects = async (email: string): Promise<Project[]> => {
-  const ref = collection(db, "users", email, "projects");
-  const snapshot = await getDocs(ref);
-  const list: Project[] = [];
-  snapshot.forEach((s) => list.push(s.data() as Project));
-  return list.sort((a, b) => b.lastModified - a.lastModified);
+  if (!isConfigured || !db) {
+     const key = `cloud_projects_${email}`;
+     return JSON.parse(localStorage.getItem(key) || "[]");
+  }
+
+  try {
+    const projectsRef = doc(db, "projects", email);
+    const docSnap = await getDoc(projectsRef);
+
+    if (docSnap.exists()) {
+      return docSnap.data().list as Project[];
+    }
+    return [];
+  } catch (e) {
+    console.error("Error fetching projects from Cloud:", e);
+    return [];
+  }
+};
+
+export const deleteProject = async (email: string, projectId: string): Promise<void> => {
+  if (!isConfigured || !db) {
+     const key = `cloud_projects_${email}`;
+     const existing: Project[] = JSON.parse(localStorage.getItem(key) || "[]");
+     const updated = existing.filter(p => p.id !== projectId);
+     localStorage.setItem(key, JSON.stringify(updated));
+     return;
+  }
+
+  try {
+    const projectsRef = doc(db, "projects", email);
+    const docSnap = await getDoc(projectsRef);
+    
+    if (docSnap.exists()) {
+        let list: Project[] = docSnap.data().list || [];
+        const updatedList = list.filter(p => p.id !== projectId);
+        await setDoc(projectsRef, { list: updatedList });
+    }
+  } catch (e) {
+    console.error("Error deleting project from Cloud:", e);
+  }
 };
