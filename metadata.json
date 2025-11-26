@@ -1,0 +1,5 @@
+{
+  "name": "CloudCode IDE",
+  "description": "A cloud-based integrated development environment to write, compile, and execute code in multiple languages, powered by Gemini.",
+  "requestFramePermissions": []
+}
